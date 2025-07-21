@@ -13,7 +13,7 @@ import bcrypt from 'bcrypt'
 import jwt from 'jsonwebtoken'
 import cookieParser from 'cookie-parser'
 import { randomInt } from 'crypto'
-
+import { requireAuth } from './auth.js'
 
 const JWT_SECRET = process.env.JWT_SECRET
 
@@ -102,6 +102,81 @@ app.post('/api/chat', async (req, res) => {
     content: completion.choices[0].message.content.trim()
   })
 })
+
+app.get('/api/chats/:threadId', requireAuth, async (req, res) => {
+  try {
+    const { threadId } = req.params
+    const userId = req.user.id
+    // (Optional) verify thread belongs to user
+    const [thread] = await db.getChatsByUserId(userId)
+      .then(list => list.filter(t => t.id === threadId))
+    if (!thread) return res.status(404).json({ error: 'Thread not found' })
+
+    // messages is a JSONB column: an array like [{ role, content, timestamp }, …]
+    res.json(thread.messages)
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Failed to fetch thread' })
+  }
+})
+
+
+
+app.get('/api/chats', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id
+    const threads = await db.getChatsByUserId(userId)
+    // Map into { id, snippet, updatedAt }
+    const summary = threads.map(t => ({
+      id:        t.id,
+      snippet:   t.messages && t.messages[0]?.content ? t.messages[0].content.slice(0, 50) : 'No messages',
+      updatedAt: t.created_at.toISOString()
+    }))
+    res.json(summary)
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Failed to fetch chats' })
+  }
+})
+
+// Create a new chat thread
+app.post('/api/create_chats', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id
+    // Always get a JS array, whether client sent a string or an array
+    let { messages } = req.body
+    if (typeof messages === 'string') {
+      messages = JSON.parse(messages)
+    }
+    // db.createChatMessage will insert into JSONB column
+    const updatedmessage = JSON.stringify(messages)
+    const id = await db.createChatMessage(userId, updatedmessage)
+    res.status(201).json({ id })
+  } catch (err) {
+    console.error('CREATE_CHAT ERROR:', err)
+    res.status(500).json({ error: 'Could not create chat' })
+  }
+})
+
+// Update an existing thread
+app.patch('/api/update_chats/:threadId', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id
+    const threadId = req.params.threadId
+    let { messages } = req.body
+    if (typeof messages === 'string') {
+      messages = JSON.parse(messages)
+    }
+    // db.updateChatMessage will do an UPDATE ... SET messages = $1::jsonb
+    const updatedmessages = JSON.stringify(messages)
+    await db.updateChatMessage(threadId, updatedmessages)
+    res.sendStatus(204)
+  } catch (err) {
+    console.error('UPDATE_CHAT ERROR:', err)
+    res.status(500).json({ error: 'Could not update chat' })
+  }
+})
+
 
 // Test echo endpoint
 app.post('/api/test', (req, res) => {
@@ -275,6 +350,7 @@ app.post('/api/add_event', async (req, res) => {
   }
 })
 
+
 // Ingestion endpoint: upload file, split into chunks, embed, and upsert to Pinecone
 
 app.post('/api/ingest', upload.single('doc'), async (req, res) => {
@@ -317,61 +393,145 @@ app.post('/api/ingest', upload.single('doc'), async (req, res) => {
   }
 })
 
-// Retrieval endpoint: query docs + generate answer
-app.post('/api/query', async (req, res) => {
-  try {
-    const question = typeof req.body === 'string' ? req.body : req.body.message
 
-    console.log(`Received query: ${question}`)
-    // Embed user question
+app.post('/api/query', requireAuth, async (req, res) => {
+  try {
+    const userId   = req.user.id
+    const { message: question, threadId } = req.body
+
+    // 1) Load chat history from Postgres:
+    const thread = await db.getChatById(threadId) 
+    console.log('thread:', thread)
+    // thread.messages is your JSONB column: an Array<ChatMessage>
+    const history = Array.isArray(thread?.messages) ? thread.messages : []
+    console.log('history:', history)
+
+    // 2) Build the LLM "messages" parameter, starting with system prompt
+    const messagesForLLM = [
+      { role: 'system', content: `You are Cohabs’ friendly assistant. Use the chat history and the context below to answer.` }
+    ]
+
+    // 3) Inject the user's *prior* messages and assistant replies
+    for (const msg of history) {
+      messagesForLLM.push({
+        role: msg.type === 'user' ? 'user' : 'assistant',
+        content: msg.content
+      })
+    }
+
+    // 4) Vector‐store retrieval for domain knowledge
     const embeddings = new OpenAIEmbeddings({}, { openai })
-    const qVector = (await embeddings.embedQuery(question))
-    console.log('qVector:', qVector) // Log first 10 dimensions for brevit
-    // Retrieve top-k
+    const qVector    = (await embeddings.embedQuery(question))
     const namespace = pine.index(indexName).namespace(DefaultNamespace);
 
-    const result = await namespace.query({
-        vector: qVector,
-        topK: 5,
-        includeMetadata: true
-      })
-    console.log('result:', result)
-    console.log('metadata:', result.matches.map(m => m.metadata))
-    console.log('sparse values:', result.matches.map(m => m.sparseValues ?? 'N/A'))
-
+    const result     = await namespace.query({
+      vector: qVector,
+      topK:   5,
+      includeMetadata: true
+    })
     const context = result.matches
       .map((m,i) => {
-        const chunk = m.metadata.text
-          ?? m.metadata.chunk_text
-          ?? '<chunk missing>';
-        return `(${i+1}) ${m.metadata.source}: ${chunk.slice(0,200)}…`;
+        const chunk = m.metadata.text ?? m.metadata.chunk_text ?? '<missing chunk>'
+        return `(${i+1}) ${m.metadata.source}: ${chunk.slice(0,200)}…`
       })
-      .join('\n\n');
+      .join('\n\n')
 
-    // 4) Assemble & call ChatGPT
-    const systemPrompt = `
-You are Cohabs’ friendly assistant. Use the context snippets below to answer.
+    // 5) Push a little context as another assistant “system” message
+    messagesForLLM.push({
+      role: 'system',
+      content: `Context snippets:\n${context}`
+    })
 
-Context:
-${context}
+    // 6) Finally append the *new* user question
+    messagesForLLM.push({
+      role: 'user',
+      content: question
+    })
 
-Question:
-${question}
-    `.trim();
+    // 7) Call the model
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
-      messages: [{ role: 'system', content: systemPrompt }],
+      messages: messagesForLLM,
       temperature: 0.0
     })
+
     res.json({
       answer: completion.choices[0].message.content.trim(),
-      sources: result.matches.map(m => m.metadata.source)
+      sources: result.matches.map(m => m.metadata.source),
     })
+
   } catch (err) {
-    console.error(err)
+    console.error('QUERY ERROR:', err)
     res.status(500).json({ error: 'Query failed' })
   }
 })
+// Make sure this is after your cookieParser/cors/etc
+app.post('/api/logout', requireAuth, (req, res) => {
+  res.clearCookie('token', {
+    httpOnly: true,
+    secure:   true,    // same as when you set it
+    sameSite: 'none',
+    path:     '/'
+  });
+  res.json({ ok: true });
+});
+
+
+// // Retrieval endpoint: query docs + generate answer
+// app.post('/api/query', async (req, res) => {
+//   try {
+//     const question = typeof req.body === 'string' ? req.body : req.body.message
+
+//     console.log(`Received query: ${question}`)
+//     // Embed user question
+//     const embeddings = new OpenAIEmbeddings({}, { openai })
+//     const qVector = (await embeddings.embedQuery(question))
+//     console.log('qVector:', qVector) // Log first 10 dimensions for brevit
+//     // Retrieve top-k
+//     const namespace = pine.index(indexName).namespace(DefaultNamespace);
+
+//     const result = await namespace.query({
+//         vector: qVector,
+//         topK: 5,
+//         includeMetadata: true
+//       })
+//     console.log('result:', result)
+//     console.log('metadata:', result.matches.map(m => m.metadata))
+//     console.log('sparse values:', result.matches.map(m => m.sparseValues ?? 'N/A'))
+
+//     const context = result.matches
+//       .map((m,i) => {
+//         const chunk = m.metadata.text
+//           ?? m.metadata.chunk_text
+//           ?? '<chunk missing>';
+//         return `(${i+1}) ${m.metadata.source}: ${chunk.slice(0,200)}…`;
+//       })
+//       .join('\n\n');
+
+//     // 4) Assemble & call ChatGPT
+//     const systemPrompt = `
+// You are Cohabs’ friendly assistant. Use the context snippets below to answer.
+
+// Context:
+// ${context}
+
+// Question:
+// ${question}
+//     `.trim();
+//     const completion = await openai.chat.completions.create({
+//       model: 'gpt-4o-mini',
+//       messages: [{ role: 'system', content: systemPrompt }],
+//       temperature: 0.0
+//     })
+//     res.json({
+//       answer: completion.choices[0].message.content.trim(),
+//       sources: result.matches.map(m => m.metadata.source)
+//     })
+//   } catch (err) {
+//     console.error(err)
+//     res.status(500).json({ error: 'Query failed' })
+//   }
+// })
 
 // Start server
 app.listen(PORT, () => {

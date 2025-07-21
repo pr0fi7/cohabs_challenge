@@ -159,14 +159,27 @@ export class CohabDB {
     }
 
   // ── Chats: ──────────────────────────────────────────────────────────────
-  async createChatMessage(userId, messages) {
-    const { rows } = await this.pool.query(
-      `INSERT INTO chats.chat_messages (user_id, messages)
-       VALUES($1, $2) RETURNING id`,
-      [userId, messages]
-    )
-    return rows[0].id
-  }
+  
+async createChatMessage(userId, messages) {
+  // messages must be a JS array of objects, **not** a JSON string
+  // e.g. [ { role, content, timestamp }, … ]
+  const { rows } = await this.pool.query(
+    `INSERT INTO chats.chat_messages (user_id, messages)
+     VALUES ($1, $2)
+     RETURNING id`,
+    [userId, messages]
+  );
+  return rows[0].id;
+}
+
+async updateChatMessage(id, messages) {
+  await this.pool.query(
+    `UPDATE chats.chat_messages
+       SET messages = $1, created_at = now()
+     WHERE id = $2`,
+    [messages, id]
+  );
+}
 
   async getChats() {
     const { rows } = await this.pool.query(
@@ -182,15 +195,13 @@ export class CohabDB {
     return rows[0] || null
   }
 
-  async updateChatMessage(id, messages) {
-    await this.pool.query(
-      `UPDATE chats.chat_messages
-         SET messages=$1, created_at=now()
-       WHERE id=$2`,
-      [messages, id]
+  async getChatsByUserId(userId) {
+    const { rows } = await this.pool.query(
+      `SELECT * FROM chats.chat_messages WHERE user_id=$1 ORDER BY created_at DESC`,
+      [userId]
     )
-  }
-
+    return rows
+  } 
   // ── AUTH: USERS ─────────────────────────────────────────────────────────────
   async createUser(email, passwordHash, fullName, role) {
     const { rows } = await this.pool.query(
