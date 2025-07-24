@@ -16,8 +16,6 @@ Welcome to **Cohabs**, the all‑in‑one portal designed to empower tenants wit
 - [Architecture & Tech Stack](#-architecture--tech-stack)
 - [Getting Started](#-getting-started)
 - [Development](#-development)
-- [Contributing](#-contributing)
-- [License](#-license)
 
 ---
 
@@ -133,26 +131,5 @@ npm run dev
 ```
 
 Your frontend will hot‑reload on [http://localhost:8080](http://localhost:8080), and the backend on [http://localhost:3000](http://localhost:3000).
-
----
-
-## 🤝 Contributing
-
-1. **Fork this repository**
-2. **Create a feature branch**
-     ```bash
-     git checkout -b feat/your-feature
-     ```
-3. **Commit your changes**
-     ```bash
-     git commit -m "Add awesome feature"
-     ```
-4. **Push to your branch**
-     ```bash
-     git push origin feat/your-feature
-     ```
-5. **Open a Pull Request** — we’ll gladly review and merge!
-
-Please adhere to our Code of Conduct and follow the Architect’s Guide in `docs/`.
 
 ---
