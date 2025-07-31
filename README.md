@@ -16,11 +16,6 @@ Welcome to **Cohabs**, the all‑in‑one portal designed to empower tenants wit
 - [Architecture & Tech Stack](#-architecture--tech-stack)
 - [Getting Started](#-getting-started)
 - [Development](#-development)
-<<<<<<< HEAD
-- [Contributing](#-contributing)
-- [License](#-license)
-=======
->>>>>>> b6d6eba9c3fb160bd0ad634130b25fc150fa1f38
 
 ---
 
@@ -40,7 +35,7 @@ Cohabs is a modern, full‑stack web application built to streamline the tenant 
 
 ### 1. Chat Assistant (RAG‑Enabled)
 
-- **Natural‑language interface**: Ask “What’s the rent due date?” or “What are today’s events?”
+- **Natural‑language interface**: Ask “What’s the rent due date?” or “What are today’s events?”, all the information can be taken from the documents loaded to the db, using 'admin/upload' endpoint
 - **Retrieval‑Augmented Generation**: The assistant combines your chat history with indexed building documents (leases, policies, guides) to provide accurate, context‑aware answers.
 - **Quick‑reply buttons**: One‑tap actions like “Report Issue”, “View Events”, or “Check Billing.”
 - **Persistent threads**: Your entire conversation is stored in PostgreSQL so you can revisit past chats at any time.
@@ -90,11 +85,7 @@ Cohabs is a modern, full‑stack web application built to streamline the tenant 
 
 1. **Clone the repo**
      ```bash
-<<<<<<< HEAD
-     git clone https://github.com/your-org/cohabs-tenant-portal.git
-=======
      git clone https://github.com/pr0fi7/cohabs_challenge
->>>>>>> b6d6eba9c3fb160bd0ad634130b25fc150fa1f38
      cd cohabs-tenant-portal
      ```
 
@@ -104,7 +95,7 @@ Cohabs is a modern, full‑stack web application built to streamline the tenant 
 
      - `PG_HOST`, `PG_PORT`, `PG_USER`, `PG_PASSWORD`, `PG_DATABASE`
      - `JWT_SECRET`
-     - `OPENAI_API_KEY`, `PINECONE_API_KEY`, `PINECONE_INDEX`, (optional) `PINECONE_NAMESPACE`
+     - `OPENAI_API_KEY`, `PINECONE_API_KEY`, `PINECONE_INDEX`, `PINECONE_NAMESPACE`
 
 3. **Start with Docker Compose**
      ```bash
@@ -140,29 +131,3 @@ npm run dev
 ```
 
 Your frontend will hot‑reload on [http://localhost:8080](http://localhost:8080), and the backend on [http://localhost:3000](http://localhost:3000).
-
----
-<<<<<<< HEAD
-
-## 🤝 Contributing
-
-1. **Fork this repository**
-2. **Create a feature branch**
-     ```bash
-     git checkout -b feat/your-feature
-     ```
-3. **Commit your changes**
-     ```bash
-     git commit -m "Add awesome feature"
-     ```
-4. **Push to your branch**
-     ```bash
-     git push origin feat/your-feature
-     ```
-5. **Open a Pull Request** — we’ll gladly review and merge!
-
-Please adhere to our Code of Conduct and follow the Architect’s Guide in `docs/`.
-
----
-=======
->>>>>>> b6d6eba9c3fb160bd0ad634130b25fc150fa1f38
