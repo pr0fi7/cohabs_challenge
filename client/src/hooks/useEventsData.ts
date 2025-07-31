@@ -128,6 +128,25 @@ export const useEventsData = () => {
       }
     })()
   }, [])
+// inside useEventsData
+const fetchAndSet = useCallback(async () => {
+  try {
+    const evts = await fetchEvents()
+    setEvents(evts)
+    setError(null)
+  } catch (err: any) {
+    console.error(err)
+    setError(err.message || 'Failed to load events')
+  } finally {
+    setLoading(false)
+  }
+}, [])
+
+useEffect(() => {
+  fetchAndSet()
+}, [fetchAndSet])
+
+
 
   // ② RSVP mutator
   const rsvpToEvent = useCallback(async (eventId: string, status: 'going' | 'not_going') => {
@@ -164,6 +183,8 @@ export const useEventsData = () => {
     loading,
     error,
     rsvpToEvent,
-    getEventsByType: byType
+    getEventsByType: byType,
+    refresh: fetchAndSet, // <<< expose refresh
+
   }
 }

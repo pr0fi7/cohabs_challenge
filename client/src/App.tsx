@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
-import  AdminPanel  from "./components/portal/AdminPortal";
+import  AdminPortal  from "./components/portal/AdminPortal";
 import UploadPage from "./components/portal/UploadPanel";
 import { AuthProvider } from "./hooks/AuthContext";
 import { AuthorizationPage } from "./components/portal/pages/AuthorizationPage";
@@ -23,7 +23,7 @@ const App = () => (
           <Route path="/" element={<Index />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="/auth" element={<AuthorizationPage />} />
-          <Route path="/admin" element={<AdminPanel />} />
+          <Route path="/admin" element={<AdminPortal />} />
           <Route path="/admin/upload" element={<UploadPage />} />
 
           {/* CATCH-ALL ROUTE FOR 404 NOT FOUND */}

@@ -167,7 +167,7 @@ async createChatMessage(userId, messages) {
     `INSERT INTO chats.chat_messages (user_id, messages)
      VALUES ($1, $2)
      RETURNING id`,
-    [userId, messages]
+    [userId, JSON.stringify(messages)]  // Convert to JSON string here
   );
   return rows[0].id;
 }
@@ -175,10 +175,11 @@ async createChatMessage(userId, messages) {
 async updateChatMessage(id, messages) {
   await this.pool.query(
     `UPDATE chats.chat_messages
-       SET messages = $1, created_at = now()
+       SET messages = $1::jsonb
+         , created_at = now()
      WHERE id = $2`,
-    [messages, id]
-  );
+    [JSON.stringify(messages), id]  // Convert to JSON string here
+  )
 }
 
   async getChats() {

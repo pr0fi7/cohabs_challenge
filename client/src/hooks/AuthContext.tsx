@@ -1,6 +1,7 @@
 // src/contexts/AuthContext.tsx
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import axios from 'axios'
+import { Link } from 'lucide-react'
 
 interface User {
   id: string
@@ -20,27 +21,38 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+export function useIsAdmin() {
+  const { user } = useAuth()
+
+  return user?.role === 'admin'
+}
+
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser]     = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    axios.get<User>('http://localhost:3000/api/auth/me', { withCredentials: true })
+    axios.get<User>('/api/auth/me', { withCredentials: true })
       .then(res => setUser(res.data))
       .catch(() => setUser(null))
       .finally(() => setLoading(false))
 
     console.log('user', user)
+    if (user?.role === 'admin') {
+      window.location.href = '/admin'
+    }
   }, [])
 
   const login = async (email: string, password: string) => {
-    const res = await axios.post<User>('http://localhost:3000/api/login', { email, password }, { withCredentials: true })
+    const res = await axios.post<User>('/api/login', { email, password }, { withCredentials: true })
     setUser(res.data)
     window.location.href = '/' // Redirect to home after login
   }
 
+  
+
   const register = async (email: string, password: string, fullName: string) => {
-    const res = await axios.post<User>('http://localhost:3000/api/register_tenant', { email, password, fullName })
+    const res = await axios.post<User>('/api/register_tenant', { email, password, fullName })
     setUser(res.data)
     window.location.href = '/' // Redirect to home after registration
     
@@ -49,7 +61,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const logout = async () => {
       try {
         await axios.post(
-          'http://localhost:3000/api/logout',
+          '/api/logout',
           {},
           { withCredentials: true }
         );

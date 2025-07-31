@@ -1,5 +1,5 @@
 // src/components/portal/pages/TicketsPage.tsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import axios from 'axios'
 import { Button } from '../../ui/button'
 import { Card, CardContent } from '../../ui/card'
@@ -22,12 +22,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../ui/select'
+import { TicketModal } from '../modals/TicketModal' // adjust path if needed
+import { useToast } from '../../../hooks/use-toast'
 
-interface TicketsPageProps {
-  onCreateTicket: () => void
-}
-
-// match exactly your /api/get_tickets payload
 interface RawTicket {
   id:           string
   title:        string
@@ -37,8 +34,8 @@ interface RawTicket {
   category:     string
   created_at:   string
   updated_at:   string
-  assignee?:    string      // if your API uses a different field, adjust here
-  tenant_id?:   string      // sometimes the raw field is called tenant_id
+  assignee?:    string
+  tenant_id?:   string
 }
 
 interface Ticket {
@@ -51,43 +48,56 @@ interface Ticket {
   createdDate:  Date
   updatedDate:  Date
   assignee?:    string
+  
 }
 
-export const TicketsPage: React.FC<TicketsPageProps> = ({ onCreateTicket }) => {
+export const TicketsPage: React.FC = () => {
   const [tickets, setTickets] = useState<Ticket[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<RawTicket['status'] | 'all'>('all')
   const [priorityFilter, setPriorityFilter] = useState<RawTicket['priority'] | 'all'>('all')
+  const [error, setError] = useState<string | null>(null)
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const { toast } = useToast()
+
+
+  const fetchTickets = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await axios.get<RawTicket[]>('http://localhost:3000/api/get_tickets', {
+        withCredentials: true
+      })
+      const mapped: Ticket[] = res.data.map(rt => ({
+        id:          rt.id,
+        title:       rt.title,
+        description: rt.description,
+        status:      rt.status,
+        priority:    rt.priority,
+        category:    rt.category,
+        createdDate: new Date(rt.created_at),
+        updatedDate: new Date(rt.updated_at),
+        assignee:    rt.assignee ?? rt.tenant_id
+      }))
+      setTickets(mapped)
+    } catch (err: any) {
+      console.error('Failed to load tickets', err)
+      setError(err?.message || 'Failed to load tickets')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
-    ;(async () => {
-      try {
-        const res = await axios.get<RawTicket[]>('http://localhost:3000/api/get_tickets', {
-          withCredentials: true
-        })
-        console.log('raw tickets:', res.data)
+    fetchTickets()
+  }, [fetchTickets])
 
-        const mapped: Ticket[] = res.data.map(rt => ({
-          id:          rt.id,
-          title:       rt.title,
-          description: rt.description,
-          status:      rt.status,
-          priority:    rt.priority,
-          category:    rt.category,                  // use the real category
-          createdDate: new Date(rt.created_at),
-          updatedDate: new Date(rt.updated_at),
-          assignee:    rt.assignee ?? rt.tenant_id  // whichever is defined
-        }))
-
-        setTickets(mapped)
-      } catch (err) {
-        console.error('Failed to load tickets', err)
-      } finally {
-        setLoading(false)
-      }
-    })()
-  }, [])
+  const handleCreated = () => {
+    toast({ title: 'Ticket Created', description: 'Refreshing list…' })
+    fetchTickets()
+    setIsModalOpen(false)
+  }
 
   if (loading) {
     return <div className="p-4">Loading tickets…</div>
@@ -112,24 +122,15 @@ export const TicketsPage: React.FC<TicketsPageProps> = ({ onCreateTicket }) => {
       default:       return 'text-gray-600'
     }
   }
-  const getStatusIcon = (s: Ticket['status']) => {
-    switch (s) {
-      case 'open':        return <Clock className="w-4 h-4" />
-      case 'in_progress': return <AlertCircle className="w-4 h-4" />
-      case 'resolved':    return <CheckCircle className="w-4 h-4" />
-      case 'closed':      return <CheckCircle className="w-4 h-4" />
-      default:            return <Clock className="w-4 h-4" />
-    }
-  }
 
   // filter logic
   const filtered = tickets.filter(t => {
-    const matchesText = 
+    const matchesText =
       t.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       t.description.toLowerCase().includes(searchTerm.toLowerCase())
 
-    const matchesStatus   = statusFilter === 'all'     || t.status === statusFilter
-    const matchesPriority = priorityFilter === 'all'   || t.priority === priorityFilter
+    const matchesStatus = statusFilter === 'all' || t.status === statusFilter
+    const matchesPriority = priorityFilter === 'all' || t.priority === priorityFilter
 
     return matchesText && matchesStatus && matchesPriority
   })
@@ -145,7 +146,7 @@ export const TicketsPage: React.FC<TicketsPageProps> = ({ onCreateTicket }) => {
               Track and manage your maintenance requests
             </p>
           </div>
-          <Button onClick={onCreateTicket} className="bg-primary">
+          <Button onClick={() => setIsModalOpen(true)} className="bg-primary">
             <Plus className="w-4 h-4 mr-2" /> New Ticket
           </Button>
         </div>
@@ -190,15 +191,18 @@ export const TicketsPage: React.FC<TicketsPageProps> = ({ onCreateTicket }) => {
       </div>
 
       {/* Tickets List */}
-
-      <div
-        className="flex-1 overflow-y-auto p-4 space-y-4 pb-18"
-        style={{ paddingBottom: '4rem' }}
-      >
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-18" style={{ paddingBottom: '4rem' }}>
+        {error && (
+          <div className="text-red-600 mb-4">
+            {error}
+          </div>
+        )}
         {filtered.length === 0 ? (
           <div className="text-center py-12">
             <Clock className="w-8 h-8 text-muted-foreground mx-auto mb-4" />
-            <h3 className="text-lg">No tickets found</h3>
+            <h3 className="text-lg">{searchTerm || statusFilter !== 'all' || priorityFilter !== 'all'
+              ? 'No tickets match your filters'
+              : 'No tickets found'}</h3>
           </div>
         ) : (
           filtered.map(ticket => (
@@ -206,9 +210,6 @@ export const TicketsPage: React.FC<TicketsPageProps> = ({ onCreateTicket }) => {
               <CardContent className="p-4">
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
-                    {/* <div className={`p-2 rounded-lg ${getStatusColor(ticket.status)}`}>
-                      {getStatusIcon(ticket.status)}
-                    </div> */}
                     <div>
                       <h3 className="font-semibold text-foreground">{ticket.title}</h3>
                       <p className="text-sm text-muted-foreground">#{ticket.id}</p>
@@ -236,18 +237,13 @@ export const TicketsPage: React.FC<TicketsPageProps> = ({ onCreateTicket }) => {
                       </div>
                     )}
                   </div>
-                  <div className="flex items-center gap-2">
-                    {/* <Badge variant="secondary" className="text-xs">
-                      {ticket.category}
-                    </Badge> */}
-<div className="flex flex-col space-y-1 sm:flex-row sm:space-x-2 sm:space-y-0">
-  <Badge className={`${getPriorityColor(ticket.priority)} bg-transparent border-current`}>
-    {ticket.priority}
-  </Badge>
-  <Badge className={getStatusColor(ticket.status)}>
-    {ticket.status.replace('_', ' ')}
-  </Badge>
-</div>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <Badge className={`${getPriorityColor(ticket.priority)} bg-transparent border-current`}>
+                      {ticket.priority}
+                    </Badge>
+                    <Badge className={getStatusColor(ticket.status)}>
+                      {ticket.status.replace('_', ' ')}
+                    </Badge>
                   </div>
                 </div>
               </CardContent>
@@ -255,6 +251,12 @@ export const TicketsPage: React.FC<TicketsPageProps> = ({ onCreateTicket }) => {
           ))
         )}
       </div>
+
+      <TicketModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSuccess={handleCreated}
+      />
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChatWindow } from './chat/ChatWindow';
 import { NavigationHeader } from './navigation/NavigationHeader';
 import { BottomNavigation } from './navigation/BottomNavigation';
@@ -31,19 +31,41 @@ export const TenantPortal: React.FC<TenantPortalProps> = ({
   const [isBillingPanelOpen, setIsBillingPanelOpen] = useState(false);
   const [isAccountPanelOpen, setIsAccountPanelOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [activeThreadId, setActiveThreadId] = useState<string | null>(
-    () => localStorage.getItem('chatThreadId')
-  )
-  const {user, loading} = useAuth();
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
+
+  const { user, loading } = useAuth();
+
+  // useEffect(() => {
+  //   if (activeThreadId) {
+  //     localStorage.setItem('chatThreadId', activeThreadId);
+  //   } else {
+  //     localStorage.removeItem('chatThreadId');
+  //   }
+  // }, [activeThreadId]);
+
   if (loading) return <div>Loading…</div>;
-  if (!user) window.location.href = '/auth';
+  if (!user) {
+    // redirect client-side; you might prefer a router push instead
+    window.location.href = '/auth';
+    return null;
+  }
+  
+//   useEffect(() => {
+//   if (activePanel !== 'chat') {
+//     setActiveThreadId(null); // drop thread when leaving chat if that’s desired
+//   }
+// }, [activePanel]);
 
   const handleSelectThread = (id: string) => {
-    setActivePanel('chat')
-    // force a change so our hook reloads
-    setActiveThreadId(null)
-    setTimeout(() => setActiveThreadId(id), 0)
-  }
+    setActivePanel('chat');
+    setActiveThreadId(prev => (prev === id ? null : id));
+    // if it was same and became null, effect in hook will fetch nothing;
+    // then immediately set it back to id to re-trigger fetch
+    if (activeThreadId === id) {
+      setTimeout(() => setActiveThreadId(id), 0);
+    }
+  };
+
 
   const handleQuickAction = (action: string) => {
     switch (action) {
@@ -66,11 +88,11 @@ export const TenantPortal: React.FC<TenantPortalProps> = ({
     switch (activePanel) {
       case 'chat':
         return (
-        <ChatWindow
-          threadId={activeThreadId}
-          onThreadCreated={setActiveThreadId}
-          onQuickAction={handleQuickAction}
-        />
+          <ChatWindow
+            threadId={activeThreadId}
+            onThreadCreated={setActiveThreadId}
+            onQuickAction={handleQuickAction}
+          />
         );
       case 'tickets':
         return <TicketsPage onCreateTicket={() => setIsTicketModalOpen(true)} />;
@@ -87,8 +109,7 @@ export const TenantPortal: React.FC<TenantPortalProps> = ({
 
   return (
     <div className="h-screen flex flex-col bg-background">
-      {/* Navigation Header */}
-      <NavigationHeader 
+      <NavigationHeader
         userName={userName}
         userAvatar={userAvatar}
         onMenuClick={() => setIsMobileMenuOpen(true)}
@@ -97,10 +118,10 @@ export const TenantPortal: React.FC<TenantPortalProps> = ({
         onPanelChange={setActivePanel}
       />
 
-      {/* Main Content Area */}
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-        {/* Desktop Sidebar - Hidden on mobile */}
+        {/* Desktop Sidebar */}
         <div className="hidden lg:block lg:w-80 border-r border-border">
+          {/* Show chat sidebar on desktop */}
           <ChatWindow
             threadId={activeThreadId}
             onThreadCreated={setActiveThreadId}
@@ -108,30 +129,25 @@ export const TenantPortal: React.FC<TenantPortalProps> = ({
           />
         </div>
 
-        {/* Main Panel - Chat on mobile, selected panel on desktop */}
-        <div className="flex-1 flex flex-col lg:hidden">
-          {renderMainContent()}
-        </div>
+        {/* Main Panel for mobile or non-chat */}
+        <div className="flex-1 flex flex-col lg:hidden">{renderMainContent()}</div>
 
-        {/* Desktop Right Panel */}
+        {/* Desktop Right Panel: history or other active panel */}
         <div className="hidden lg:flex lg:flex-1 lg:flex-col">
-          {activePanel !== 'chat'
-            ? renderMainContent()
-            : <ChatHistoryPanel onSelectThread={handleSelectThread} />
-          }
+          {activePanel === 'chat' ? (
+            <ChatHistoryPanel onSelectThread={handleSelectThread} />
+          ) : (
+            renderMainContent()
+          )}
         </div>
       </div>
 
-      {/* Bottom Navigation - Mobile only */}
+      {/* Mobile bottom nav */}
       <div className="lg:hidden">
-        <BottomNavigation 
-          activePanel={activePanel}
-          onPanelChange={setActivePanel}
-        />
+        <BottomNavigation activePanel={activePanel} onPanelChange={setActivePanel} />
       </div>
 
-      {/* Mobile Menu */}
-      <MobileMenu 
+      <MobileMenu
         isOpen={isMobileMenuOpen}
         onClose={() => setIsMobileMenuOpen(false)}
         activePanel={activePanel}
@@ -139,26 +155,13 @@ export const TenantPortal: React.FC<TenantPortalProps> = ({
         userName={userName}
       />
 
-      {/* Modals and Panels */}
-      <TicketModal 
-        isOpen={isTicketModalOpen}
-        onClose={() => setIsTicketModalOpen(false)}
-      />
-      
-      <EventsPanel 
-        isOpen={isEventsPanelOpen}
-        onClose={() => setIsEventsPanelOpen(false)}
-      />
-      
-      <BillingPanel 
-        isOpen={isBillingPanelOpen}
-        onClose={() => setIsBillingPanelOpen(false)}
-      />
-      
-      <AccountPanel 
-        isOpen={isAccountPanelOpen}
-        onClose={() => setIsAccountPanelOpen(false)}
-      />
+      <TicketModal isOpen={isTicketModalOpen} onClose={() => setIsTicketModalOpen(false)} />
+
+      <EventsPanel isOpen={isEventsPanelOpen} onClose={() => setIsEventsPanelOpen(false)} />
+
+      <BillingPanel isOpen={isBillingPanelOpen} onClose={() => setIsBillingPanelOpen(false)} />
+
+      <AccountPanel isOpen={isAccountPanelOpen} onClose={() => setIsAccountPanelOpen(false)} />
     </div>
   );
 };

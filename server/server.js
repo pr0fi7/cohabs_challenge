@@ -18,6 +18,11 @@ import { requireAuth } from './auth.js'
 
 const JWT_SECRET = process.env.JWT_SECRET
 const upload     = multer({ storage: multer.memoryStorage() })
+const pine = new Pinecone({
+  apiKey: process.env.PINECONE_API_KEY
+})
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+
 
 async function main() {
   // 1) Ensure all schemas & tables exist
@@ -38,6 +43,45 @@ async function main() {
   app.use(express.json())
   app.use(cookieParser())
 
+
+  const indexName     = process.env.PINECONE_INDEX;
+  const DefaultNamespace = process.env.PINECONE_NAMESPACE || 'DefaultNamespace'; // default namespace if not set
+  const pineconeEnvironment = process.env.PINECONE_ENVIRONMENT || 'us-east-1'; // default to us-east-1 if not set
+  const listResponse  = await pine.listIndexes();
+  const existingNames = Array.isArray(listResponse)
+    ? listResponse
+    : listResponse.indexes;
+  if (!existingNames.includes(indexName)) {
+    console.log(`Index "${indexName}" not found. Creating...`);
+    try {
+
+    await pine.createIndex({
+      name:           indexName,      // required
+      dimension:      1536,           // replace with your embedding size
+      metric:         'cosine',       // or 'dotproduct' / 'euclidean'
+        spec: {
+      serverless: {
+        cloud: 'aws',
+        region: pineconeEnvironment, // e.g. 'us-west1-gcp'
+      }
+    },
+    deletionProtection: 'disabled',
+    tags: { environment: 'development' },           // optional: blocks until the index is ready
+    });
+    console.log(`Index "${indexName}" created.`);
+  } catch (err) {
+      // If it already exists, that's fine; otherwise re‐throw
+      if (err.name === 'PineconeConflictError' && err.message.includes('ALREADY_EXISTS')) {
+        console.log(`Index "${indexName}" already exists—continuing.`);
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  const index = pine.Index(indexName);
+
+  
   // 4) Health check
   app.get('/', (req, res) => {
     res.json({ status: 'OK', message: 'Cohabs Chatbot API' })
@@ -142,18 +186,49 @@ async function main() {
   // 6) Chat endpoints
   app.get('/api/chats', requireAuth, async (req, res) => {
     try {
-      const threads = await db.getChatsByUserId(req.user.id)
+      const userId = req.user.id
+      console.log('Fetching chat history for user:', userId)
+      const threads = await db.getChatsByUserId(userId)
+      // Map into { id, snippet, updatedAt }
       const summary = threads.map(t => ({
         id:        t.id,
-        snippet:   (t.messages[0]?.content || '').slice(0,50),
+        snippet:   t.messages && t.messages[0]?.content ? t.messages[0].content.slice(0, 50) : 'No messages',
         updatedAt: t.created_at.toISOString()
+
       }))
+      console.log('Chat history fetched from: ', req.user.id)
+
       res.json(summary)
     } catch (err) {
-      console.error('LIST CHATS ERROR:', err)
+      console.error(err)
       res.status(500).json({ error: 'Failed to fetch chats' })
     }
   })
+
+  app.get('/api/get_all_payments', requireAuth, async (req, res) => {
+  const tenantId = req.user.tenantId   // <— same ID you saw in /api/auth/me
+  const payments = await db.getInvoicesByTenant(tenantId)
+  res.json(payments)
+})
+
+app.get('/api/get_tickets', requireAuth, async (req, res) => {
+  const allTickets = await db.getTickets()
+  res.json(allTickets)
+})
+
+app.post('/api/create_ticket', requireAuth, async (req, res) => {
+  try {
+    const { tenantId, title, description, priority, status } = req.body
+    if (!tenantId || !title || !description || !priority || !status) {
+      return res.status(400).json({ error: 'All fields are required' })
+    }
+    const id = await db.createTicket(tenantId, title, description, priority, status)
+    res.status(201).json({ id })
+  } catch (err) {
+    console.error('CREATE TICKET ERROR:', err)
+    res.status(500).json({ error: 'Failed to create ticket' })
+  }
+})
 
   app.get('/api/chats/:threadId', requireAuth, async (req, res) => {
     try {
@@ -168,29 +243,48 @@ async function main() {
     }
   })
 
-  app.post('/api/create_chats', requireAuth, async (req, res) => {
-    try {
-      let { messages } = req.body
-      if (typeof messages === 'string') messages = JSON.parse(messages)
-      const id = await db.createChatMessage(req.user.id, messages)
-      res.status(201).json({ id })
-    } catch (err) {
-      console.error('CREATE CHAT ERROR:', err)
-      res.status(500).json({ error: 'Could not create chat' })
-    }
-  })
+// server.js (or wherever your routes live)
 
-  app.patch('/api/update_chats/:threadId', requireAuth, async (req, res) => {
-    try {
-      let { messages } = req.body
-      if (typeof messages === 'string') messages = JSON.parse(messages)
-      await db.updateChatMessage(req.params.threadId, messages)
-      res.sendStatus(204)
-    } catch (err) {
-      console.error('UPDATE CHAT ERROR:', err)
-      res.status(500).json({ error: 'Could not update chat' })
+// CREATE
+app.post('/api/create_chats', requireAuth, async (req, res) => {
+  try {
+    let { messages } = req.body;
+    if (typeof messages === 'string') {
+      messages = JSON.parse(messages);
     }
-  })
+    // debug
+    console.log('CREATE_CHAT incoming messages:', messages);
+    if (!Array.isArray(messages)) {
+      return res.status(400).json({ error: 'messages must be an array' });
+    }
+    const id = await db.createChatMessage(req.user.id, messages); // pass array directly
+    res.status(201).json({ id });
+  } catch (err) {
+    console.error('CREATE_CHAT ERROR:', err);
+    res.status(500).json({ error: 'Could not create chat' });
+  }
+});
+
+// UPDATE
+app.patch('/api/update_chats/:threadId', requireAuth, async (req, res) => {
+  try {
+    let { messages } = req.body;
+    if (typeof messages === 'string') {
+      messages = JSON.parse(messages);
+    }
+    console.log('UPDATE_CHAT incoming messages:', messages);
+    if (!Array.isArray(messages)) {
+      return res.status(400).json({ error: 'messages must be an array' });
+    }
+    await db.updateChatMessage(req.params.threadId, messages); // pass array directly
+    res.sendStatus(204);
+  } catch (err) {
+    console.error('UPDATE_CHAT ERROR:', err);
+    res.status(500).json({ error: 'Could not update chat' });
+  }
+});
+
+
 
   // 7) Events & RSVPs
   app.get('/api/events', async (req, res) => {
@@ -215,6 +309,86 @@ async function main() {
       res.status(500).json({ error: 'Failed to create event' })
     }
   })
+
+// simple admin-check middleware (requires requireAuth to have run first)
+function requireAdmin(req, res, next) {
+  if (!req.user || req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Forbidden: admin only' })
+  }
+  next()
+}
+
+const ALLOWED_MIMES = ['text/plain', 'text/markdown', 'application/pdf']
+
+app.post(
+  '/api/ingest',
+  requireAuth,
+  requireAdmin,
+  upload.single('doc'),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: 'No file uploaded' })
+      }
+
+      if (!ALLOWED_MIMES.includes(req.file.mimetype)) {
+        return res
+          .status(400)
+          .json({ error: `Unsupported file type: ${req.file.mimetype}` })
+      }
+
+      const raw = req.file.buffer.toString('utf8')
+
+      const splitter = new RecursiveCharacterTextSplitter({
+        chunkSize: 1000,
+        chunkOverlap: 200
+      })
+      const docs = await splitter.createDocuments([raw])
+
+      const embeddings = new OpenAIEmbeddings({}, { openai })
+
+      console.log(
+        `Ingesting ${docs.length} chunks from ${req.file.originalname}`
+      )
+      console.log(`Raw text: ${raw.slice(0, 200)}...`)
+
+      // Batch upsert documents
+      for (let i = 0; i < docs.length; i += 50) {
+        const batch = docs.slice(i, i + 50)
+        const embedded = await embeddings.embedDocuments(
+          batch.map(d => d.pageContent)
+        )
+        const vectors = embedded.map((values, idx) => ({
+          id: `${req.file.originalname}-${i + idx}`,
+          values,
+          metadata: {
+            source: req.file.originalname,
+            text: batch[idx].pageContent
+          }
+        }))
+
+        console.log(`Upserting batch: `, vectors)
+
+        await index
+          .namespace(DefaultNamespace)
+          .upsert([...vectors])
+
+        console.log(
+          `Upserted ${batch.length} chunks from ${req.file.originalname}`
+        )
+      }
+
+      res.json({
+        status: 'ingestion complete',
+        file: req.file.originalname,
+        chunks: docs.length
+      })
+    } catch (err) {
+      console.error('INGEST ERROR:', err)
+      res.status(500).json({ error: 'Ingestion failed' })
+    }
+  }
+)
 
   app.post('/api/query', requireAuth, async (req, res) => {
     try {
@@ -262,9 +436,9 @@ async function main() {
   })
 
   // 8) Start listening
-  app.listen(PORT, () => {
-    console.log(`🚀 Server running on http://localhost:${PORT}`)
-  })
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Server running on http://localhost:${PORT}`)
+})
 }
 
 main().catch(err => {

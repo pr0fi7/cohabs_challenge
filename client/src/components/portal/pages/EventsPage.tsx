@@ -27,7 +27,7 @@ import {
 import { useEventsData } from '../../../hooks/useEventsData'
 
 export const EventsPage: React.FC = () => {
-  const { events, rsvpToEvent } = useEventsData()
+  const { allEvents: filteredEvents, rsvpToEvent, refresh } = useEventsData()
   const [searchTerm, setSearchTerm] = useState('')
   const [typeFilter, setTypeFilter] = useState<string>('all')
   const [rsvpingEventId, setRsvpingEventId] = useState<string | null>(null)
@@ -41,8 +41,6 @@ export const EventsPage: React.FC = () => {
   console.log('user:', user)
   const tenantId = user.id
 
-  const { allEvents /* instead of events */ } = useEventsData();
-  const filteredEvents = allEvents; // or .filter(…)
 
   const handleRSVP = async (id: string, status: 'going' | 'not_going') => {
     setRsvpingEventId(id)
@@ -245,13 +243,14 @@ export const EventsPage: React.FC = () => {
       {isFormOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-end z-50">
         <div className="w-full sm:w-3/4 lg:w-2/3 bg-white h-full p-6 overflow-auto">
-            <AddEventForm
-              tenantId={tenantId}
-              onSuccess={id => {
-                setIsFormOpen(false)
-              }}
-              onCancel={() => setIsFormOpen(false)}
-            />
+          <AddEventForm
+            tenantId={tenantId}
+            onSuccess={id => {
+              setIsFormOpen(false)
+              refresh() // reload list so newly created event shows
+            }}
+            onCancel={() => setIsFormOpen(false)}
+          />
           </div>
         </div>
       )}

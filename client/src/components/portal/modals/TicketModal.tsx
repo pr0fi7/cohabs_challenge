@@ -25,11 +25,12 @@ import { useAuth } from '../../../hooks/AuthContext';
 interface TicketModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onSuccess: () => void;
 }
 
 type Priority = 'low' | 'medium' | 'high' | 'urgent';
 
-export const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose }) => {
+export const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose, onSuccess }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<Priority>('medium');
@@ -63,33 +64,33 @@ export const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose }) => 
 
     setIsSubmitting(true);
     
-    try {
-      // Simulate API call
-      const res = await axios.post<{ id: string }>('http://localhost:3000/api/create_ticket', {
-        title,
-        description,
-        userId: user?.id, // Assuming user is available from AuthContext
-        priority,
-        status: 'open', // Default status
-      }, { withCredentials: true });
- 
-      
-      toast({
-        title: "Ticket Created",
-        description: "Your maintenance request has been submitted successfully.",
-      });
-      
-      // Reset form
-      setTitle('');
-      setDescription('');
-      setPriority('medium');
-      setAttachments([]);
-      onClose();
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to create ticket. Please try again.",
-        variant: "destructive"
+try {
+  const res = await axios.post<{ id: string }>('http://localhost:3000/api/create_ticket', {
+    tenantId: user?.id || '',
+    title,
+    description,
+    priority,
+    status: 'open',
+  }, { withCredentials: true });
+
+  toast({
+    title: "Ticket Created",
+    description: "Your maintenance request has been submitted successfully.",
+  });
+
+  // reset form
+  setTitle('');
+  setDescription('');
+  setPriority('medium');
+  setAttachments([]);
+  if (onSuccess) onSuccess(); // invoke callback
+  onClose();
+}
+catch (err: any) {
+  toast({
+    title: "Error",
+    description: "Failed to create ticket. Please try again.",
+    variant: "destructive"
       });
     } finally {
       setIsSubmitting(false);
@@ -105,6 +106,8 @@ export const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose }) => 
       default: return 'text-muted-foreground';
     }
   };
+
+
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
