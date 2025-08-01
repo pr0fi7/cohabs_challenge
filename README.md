@@ -74,7 +74,7 @@ Cohabs is a modern, full‑stack web application built to streamline the tenant 
 | **Frontend**        | React, TypeScript, Tailwind CSS, Vite                                      |
 | **Backend**         | Node.js, Express, TypeScript                                               |
 | **Database**        | PostgreSQL (with `pg` & `pgcrypto`)                                        |
-| **AI & RAG**        | OpenAI Embeddings & Chat Completions, Pinecone vector store, LangChain     |
+| **AI & RAG**        | OpenAI Embeddings & Chat Completions, Pinecone vector store                |
 | **Authentication**  | JSON Web Tokens (JWT) in HTTP‑only cookies                                 |
 | **Containerization**| Docker & Docker Compose                                                    |
 | **DevOps**          | Nginx reverse‑proxy (for client), CI/CD pipelines                          |
@@ -96,6 +96,7 @@ Cohabs is a modern, full‑stack web application built to streamline the tenant 
      - `PG_HOST`, `PG_PORT`, `PG_USER`, `PG_PASSWORD`, `PG_DATABASE`
      - `JWT_SECRET`
      - `OPENAI_API_KEY`, `PINECONE_API_KEY`, `PINECONE_INDEX`, `PINECONE_NAMESPACE`
+     - `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_FULL_NAME`
 
 3. **Start with Docker Compose**
      ```bash
@@ -119,6 +120,8 @@ Cohabs is a modern, full‑stack web application built to streamline the tenant 
 ```bash
 cd server
 npm install
+npm db:init
+npm db:create-admin
 npm run dev
 ```
 
